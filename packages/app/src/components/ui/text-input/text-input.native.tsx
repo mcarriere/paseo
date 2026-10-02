@@ -55,9 +55,10 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
     const [replacement, setReplacement] = useState({ revision: 0, autoFocus: false });
     // Fabric re-measures the Android input when its `text` prop changes. A native edit only
     // refreshes a cached spannable, and batched IME deletes (Gboard hold-to-delete) leave the
-    // measured height at the previous content, so an emptied draft keeps several lines. Render
-    // again after every edit so `defaultValue` carries the current text and the input is
-    // re-measured. Only this leaf renders; the composer stays isolated from typing.
+    // measured height at the previous content, so an emptied draft keeps several lines.
+    // Re-render only when text shrinks (or loses newlines): pushing a new `defaultValue`
+    // on every keystroke resets SwiftKey's composing state and duplicates the typed
+    // letter, so insertions must leave the native buffer untouched.
     const [, bumpTextRevision] = useReducer((revision: number) => revision + 1, 0);
 
     const assignInputRef = useCallback((input: NativeInput | null) => {
@@ -118,9 +119,14 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
 
     const handleChangeText = useCallback(
       (nextText: string) => {
+        const previousText = textRef.current;
         textRef.current = nextText;
         onChangeText?.(nextText);
-        bumpTextRevision();
+        const previousNewlines = (previousText.match(/\n/g) ?? []).length;
+        const nextNewlines = (nextText.match(/\n/g) ?? []).length;
+        if (nextText.length < previousText.length || nextNewlines < previousNewlines) {
+          bumpTextRevision();
+        }
       },
       [onChangeText],
     );
